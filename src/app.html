@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#123c33">
+<title>Looper</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+/* VOICE: ein Effektpedal in der Hand, knapp und griffig
+   IDEA: das Gehäuse eines Looper-Pedals: großer Fußtaster, Wellenform-Display
+   PICTURE: der runde Aufnahme-Taster und das Display mit Loop-Fenster
+   COLOUR and TYPE: tiefes Pedalgrün, warmes Weiß, Korallrot für Aufnahme; Archivo
+   LAYOUT: eine Spalte, Display oben, Taster mittig, Varianten darunter */
+:root{color-scheme:light dark;
+ --bg:light-dark(#e9f0ec,#0b1e1a);--box:light-dark(#123c33,#123c33);--ink:light-dark(#10231e,#e8efe9);
+ --on-box:#eaf2ec;--mute:light-dark(#4e6a62,#93aba3);--rec:#ff5a4e;--loop:#9ee6c4;--line:rgba(234,242,236,.18)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Archivo,system-ui,sans-serif;overflow-x:clip}
+main{max-width:560px;margin:0 auto;padding:max(16px,env(safe-area-inset-top)) 16px 40px}
+h1{font-size:32px;line-height:1.05;margin:8px 0 4px;font-weight:800;letter-spacing:-.01em}
+.sub{color:var(--mute);margin:0 0 16px;font-size:15px}
+.pedal{background:var(--box);color:var(--on-box);border-radius:22px;padding:16px;box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 18px 40px -18px rgba(0,0,0,.55)}
+.screen{position:relative;height:150px;border-radius:12px;background:#07160f;overflow:hidden;border:1px solid var(--line)}
+.screen canvas{position:absolute;inset:0;width:100%;height:100%}
+.screen .msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:12px;color:#93aba3;font-size:15px}
+.readout{display:flex;justify-content:space-between;gap:8px;margin:10px 2px 0;font-size:15px;font-variant-numeric:tabular-nums}
+.readout b{font-size:20px}
+.stomp{display:grid;place-items:center;margin:22px 0 8px}
+#rec{width:132px;height:132px;border-radius:50%;border:6px solid #2c5d52;background:radial-gradient(circle at 35% 30%,#ff7a70,var(--rec) 55%,#c63a31);color:#fff;font:800 17px Archivo,sans-serif;cursor:pointer;box-shadow:0 10px 0 #0a251f,0 14px 24px rgba(0,0,0,.4);transition:transform .08s}
+#rec:active{transform:translateY(5px);box-shadow:0 5px 0 #0a251f,0 8px 16px rgba(0,0,0,.4)}
+#rec.on{animation:pulse 1.1s infinite}
+#rec.play,#rec.idle{font-size:40px}
+#rec.play{background:radial-gradient(circle at 35% 30%,#c8f5df,var(--loop) 55%,#5fb892);color:#0b2a22}
+@keyframes pulse{50%{box-shadow:0 10px 0 #0a251f,0 0 0 14px rgba(255,90,78,.25)}}
+@media (prefers-reduced-motion:reduce){#rec.on{animation:none}}
+.hint{text-align:center;color:#93aba3;font-size:14px;margin:6px 0 0;min-height:1.5em}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+button.s{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--on-box);font:600 15px Archivo,sans-serif;cursor:pointer}
+button.s[aria-pressed=true]{background:var(--loop);color:#0b2a22;border-color:var(--loop)}
+button.s:disabled{opacity:.4}
+button:focus-visible,label.s:focus-within{outline:3px solid var(--loop);outline-offset:2px}
+h2{font-size:17px;margin:22px 0 8px}
+.cands{display:grid;gap:8px}
+.cand{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 12px;align-items:center;text-align:left;width:100%;min-height:56px;padding:10px 14px;border-radius:14px;border:2px solid transparent;background:light-dark(#fff,#132c26);color:var(--ink);font:inherit;cursor:pointer}
+.cand[aria-pressed=true]{border-color:light-dark(#123c33,var(--loop))}
+.cand .n{font-weight:800;font-size:18px;white-space:nowrap}
+.cand .k{color:var(--mute);font-size:14px}
+.cand .t{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.file{display:inline-flex;align-items:center;min-height:44px;color:var(--mute);font-size:15px;cursor:pointer;text-decoration:underline;margin-top:18px}
+.file input{position:absolute;opacity:0;width:1px;height:1px}
+.note{color:var(--mute);font-size:14px;margin-top:20px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Looper</h1>
+  <p class="sub">Spiel eine Phrase ein, gern zwei- oder dreimal hintereinander. Die App sucht den Loop, den du gemeint hast.</p>
+
+  <section class="pedal" aria-label="Looper">
+    <div class="screen">
+      <canvas id="wave"></canvas>
+      <div class="msg" id="msg">Tippe auf Aufnahme und spiel los.</div>
+    </div>
+    <div class="readout"><span id="rd1">–</span><span id="rd2"></span></div>
+    <div class="stomp"><button id="rec" aria-label="Aufnahme starten">REC</button></div>
+    <p class="hint" id="hint">&nbsp;</p>
+    <div class="row">
+      <button class="s" id="click" aria-pressed="false" disabled>Klick</button>
+      <button class="s" id="half" disabled>½</button>
+      <button class="s" id="dbl" disabled>×2</button>
+      <button class="s" id="again" disabled>Neu</button>
+    </div>
+  </section>
+
+  <h2 id="ch" hidden>Was hast du gemeint?</h2>
+  <div class="cands" id="cands"></div>
+
+  <label class="file">Oder Audiodatei laden (WAV, MP3, M4A)<input type="file" id="file" accept="audio/*"></label>
+  <p class="note">Tipp: Spiel deine Phrase mindestens zweimal. Dann erkennt die App die Wiederholung. Bei nur einem Durchgang rastet sie die Länge auf ganze Schläge ein.</p>
+</main>
+
+<script>
+/*LOOPJS*/
+</script>
+<script>
+{
+const $ = id => document.getElementById(id);
+const st = { ctx: null, take: null, mono: null, res: null, sel: 0, len: 0, start: 0, playing: false, src: [], gClick: null, t0: 0, rec: null, stream: null };
+
+function ctx() {
+  if (!st.ctx) st.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (st.ctx.state === 'suspended') st.ctx.resume();
+  return st.ctx;
+}
+const fmt = s => s.toFixed(2).replace('.', ',') + ' s';
+function hint(t) { $('hint').textContent = t || ' '; }
+function msg(t) { $('msg').textContent = t; $('msg').hidden = !t; }
+
+// ---------- Aufnahme ----------
+async function startRec() {
+  stopLoop();
+  const c = ctx();
+  try {
+    st.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (e) {
+    msg('Kein Mikrofonzugriff. In der Vorschau hier ist das Mikro gesperrt, also nutze „Audiodatei laden“ oder die installierte Version.');
+    return;
+  }
+  const chunks = [];
+  const mr = new MediaRecorder(st.stream);
+  mr.ondataavailable = e => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    st.stream.getTracks().forEach(t => t.stop());
+    const buf = await new Blob(chunks).arrayBuffer();
+    try { load(await c.decodeAudioData(buf)); } catch (e) { msg('Aufnahme konnte nicht gelesen werden.'); }
+  };
+  // Pegel
+  const an = c.createAnalyser(); an.fftSize = 1024;
+  c.createMediaStreamSource(st.stream).connect(an);
+  const data = new Float32Array(an.fftSize), t0 = performance.now();
+  st.rec = mr; mr.start();
+  $('rec').classList.add('on'); $('rec').textContent = 'STOP'; $('rec').setAttribute('aria-label', 'Aufnahme stoppen');
+  msg(''); hint('Aufnahme läuft. Tippe auf STOP, wenn du fertig bist.');
+  const cv = $('wave'), g = cv.getContext('2d'), hist = [];
+  (function meter() {
+    if (st.rec !== mr || mr.state !== 'recording') return;
+    an.getFloatTimeDomainData(data);
+    let p = 0; for (const v of data) p = Math.max(p, Math.abs(v));
+    hist.push(p);
+    const W = cv.width = cv.clientWidth * devicePixelRatio, H = cv.height = cv.clientHeight * devicePixelRatio;
+    g.clearRect(0, 0, W, H); g.fillStyle = '#ff5a4e';
+    const n = Math.min(hist.length, 200), bw = W / 200;
+    for (let i = 0; i < n; i++) { const v = hist[hist.length - n + i], h = Math.max(2, v * H * 0.9); g.fillRect(i * bw, (H - h) / 2, bw * 0.7, h); }
+    $('rd1').innerHTML = '<b>' + fmt((performance.now() - t0) / 1000) + '</b>'; $('rd2').textContent = 'Aufnahme';
+    requestAnimationFrame(meter);
+  })();
+}
+function stopRec() {
+  if (st.rec && st.rec.state === 'recording') st.rec.stop();
+  st.rec = null;
+  $('rec').classList.remove('on'); $('rec').textContent = '…';
+  hint('Suche den Loop …');
+}
+
+// ---------- Analyse ----------
+function load(ab) {
+  st.take = ab;
+  const n = ab.length, mono = new Float32Array(n);
+  for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ab.numberOfChannels; }
+  st.mono = mono;
+  msg(''); hint('Suche den Loop …');
+  setTimeout(() => {
+    const r = LoopDetect.detectLoops(mono, ab.sampleRate);
+    st.res = r;
+    if (!r.candidates.length) { msg(r.error || 'Kein Loop gefunden.'); resetBtn(); return; }
+    renderCands(); pick(0);
+  }, 30);
+}
+const KIND = { rep: 'Wiederholung erkannt', snap: 'Auf Schläge gerastert', raw: 'Ganze Aufnahme' , man: 'Angepasst' };
+function renderCands() {
+  $('ch').hidden = false;
+  $('cands').innerHTML = st.res.candidates.map((c, i) => `
+    <button class="cand" data-i="${i}" aria-pressed="${i === st.sel}">
+      <span class="n">${c.beats} Schläge</span>
+      <span class="k">${KIND[c.kind]}${i === 0 ? ' · beste Wahl' : ''}</span>
+      <span class="t">${fmt(c.lenS)}<br><span class="k">${Math.round(c.bpm)} BPM</span></span>
+    </button>`).join('');
+}
+function pick(i) {
+  st.sel = i;
+  const c = st.res.candidates[i];
+  st.start = c.start; st.len = c.len; st.beats = c.beats;
+  document.querySelectorAll('.cand').forEach(b => b.setAttribute('aria-pressed', b.dataset.i == i));
+  updateReadout();
+  ['click', 'half', 'dbl', 'again'].forEach(id => $(id).disabled = false);
+  playLoop();
+}
+function updateReadout() {
+  const sr = st.take.sampleRate, s = st.len / sr;
+  $('rd1').innerHTML = '<b>' + fmt(s) + '</b> · ' + st.beats + ' Schläge';
+  $('rd2').textContent = Math.round(60 * st.beats / s) + ' BPM';
+  $('dbl').disabled = st.start + 2 * st.len > st.take.length;
+  $('half').disabled = st.len / st.take.sampleRate < 0.6;
+}
+
+// ---------- Wiedergabe ----------
+function clickBuffer(c, len, beats) {
+  const b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0), n = Math.round(0.03 * c.sampleRate);
+  for (let k = 0; k < beats; k++) {
+    const s = Math.round(k * len / beats), f = k % 4 === 0 ? 1900 : 1300, a = k % 4 === 0 ? 0.5 : 0.3;
+    for (let i = 0; i < n && s + i < len; i++) d[s + i] += a * Math.sin(2 * Math.PI * f * i / c.sampleRate) * Math.exp(-i / (n / 5));
+  }
+  return b;
+}
+function playLoop() {
+  stopLoop();
+  const c = ctx(), tk = st.take;
+  const chs = []; for (let k = 0; k < tk.numberOfChannels; k++) chs.push(tk.getChannelData(k));
+  const rendered = LoopDetect.renderLoop(chs, st.start, st.len, tk.sampleRate);
+  const lb = c.createBuffer(chs.length, st.len, tk.sampleRate);
+  rendered.forEach((d, k) => lb.copyToChannel(d, k));
+  const s1 = c.createBufferSource(); s1.buffer = lb; s1.loop = true; s1.connect(c.destination);
+  const s2 = c.createBufferSource(); s2.buffer = clickBuffer(c, st.len, st.beats); s2.loop = true;
+  st.gClick = c.createGain(); st.gClick.gain.value = $('click').getAttribute('aria-pressed') === 'true' ? 1 : 0;
+  s2.connect(st.gClick).connect(c.destination);
+  const t = c.currentTime + 0.05; s1.start(t); s2.start(t);
+  st.src = [s1, s2]; st.t0 = t; st.playing = true;
+  $('rec').classList.remove('idle'); $('rec').classList.add('play'); $('rec').textContent = '■'; $('rec').setAttribute('aria-label', 'Loop stoppen');
+  hint('Loop läuft. Taster stoppt ihn, „Neu“ startet eine neue Aufnahme.');
+  requestAnimationFrame(draw);
+}
+function stopLoop() {
+  st.src.forEach(s => { try { s.stop(); } catch (e) {} });
+  st.src = []; st.playing = false;
+  resetBtn();
+}
+function resetBtn() {
+  const b = $('rec'); b.classList.remove('play', 'on');
+  b.textContent = st.take ? '▶' : 'REC'; b.classList.toggle('idle', !!st.take);
+  b.setAttribute('aria-label', st.take ? 'Loop abspielen' : 'Aufnahme starten');
+  if (st.take) hint('Taster spielt den Loop, „Neu“ startet eine neue Aufnahme.'); else hint('');
+  if (st.take) requestAnimationFrame(draw);
+}
+
+// ---------- Anzeige ----------
+function draw() {
+  const cv = $('wave'), g = cv.getContext('2d');
+  const W = cv.width = cv.clientWidth * devicePixelRatio, H = cv.height = cv.clientHeight * devicePixelRatio;
+  if (!st.mono) return;
+  const x = st.mono, n = x.length, spp = n / W;
+  const a = st.start / spp, b = (st.start + st.len) / spp;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = 'rgba(158,230,196,.13)'; g.fillRect(a, 0, b - a, H);
+  let pk = 0; for (let i = 0; i < n; i += 64) pk = Math.max(pk, Math.abs(x[i]));
+  for (let px = 0; px < W; px++) {
+    let lo = 0, hi = 0;
+    for (let i = Math.floor(px * spp), e = Math.min(n, Math.floor((px + 1) * spp)); i < e; i += 4) { const v = x[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    const inL = px >= a && px <= b;
+    g.fillStyle = inL ? '#9ee6c4' : 'rgba(234,242,236,.28)';
+    const y1 = H / 2 - hi / (pk || 1) * H * 0.45, y2 = H / 2 - lo / (pk || 1) * H * 0.45;
+    g.fillRect(px, y1, 1, Math.max(1, y2 - y1));
+  }
+  // Schläge
+  for (let k = 0; k <= st.beats; k++) {
+    const xx = a + k * (b - a) / st.beats;
+    g.fillStyle = k % 4 === 0 ? 'rgba(234,242,236,.7)' : 'rgba(234,242,236,.25)';
+    g.fillRect(xx, 0, Math.max(1, devicePixelRatio), k % 4 === 0 ? H : H * 0.12);
+  }
+  if (st.playing) {
+    const lenS = st.len / st.take.sampleRate;
+    const p = Math.max(0, (st.ctx.currentTime - st.t0) % lenS) / lenS;
+    g.fillStyle = '#ff5a4e'; g.fillRect(a + p * (b - a), 0, 2 * devicePixelRatio, H);
+    requestAnimationFrame(draw);
+  }
+}
+
+// ---------- Bedienung ----------
+$('rec').onclick = () => {
+  if (st.rec) return stopRec();
+  if (st.playing) return stopLoop();
+  if (st.take) return playLoop();
+  startRec();
+};
+$('again').onclick = () => { stopLoop(); st.take = st.mono = st.res = null; $('cands').innerHTML = ''; $('ch').hidden = true; ['click','half','dbl','again'].forEach(id => $(id).disabled = true); $('rd1').textContent = '–'; $('rd2').textContent = ''; resetBtn(); draw(); startRec(); };
+$('click').onclick = () => {
+  const on = $('click').getAttribute('aria-pressed') !== 'true';
+  $('click').setAttribute('aria-pressed', on);
+  if (st.gClick) st.gClick.gain.value = on ? 1 : 0;
+};
+function manual(f) {
+  st.len = Math.round(st.len * f); st.beats = Math.max(1, Math.round(st.beats * f));
+  document.querySelectorAll('.cand').forEach(b => b.setAttribute('aria-pressed', false));
+  updateReadout(); playLoop();
+}
+$('half').onclick = () => manual(0.5);
+$('dbl').onclick = () => manual(2);
+$('cands').onclick = e => { const b = e.target.closest('.cand'); if (b) pick(+b.dataset.i); };
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  stopLoop();
+  try { load(await ctx().decodeAudioData(await f.arrayBuffer())); } catch (err) { msg('Datei konnte nicht gelesen werden.'); }
+  e.target.value = '';
+};
+new ResizeObserver(() => st.take && !st.playing && draw()).observe($('wave'));
+}
+</script>
+</body>
+</html>
