@@ -31,13 +31,18 @@ h1{font-size:32px;line-height:1.05;margin:8px 0 4px;font-weight:800;letter-spaci
 .readout{display:flex;justify-content:space-between;gap:8px;margin:10px 2px 0;font-size:15px;font-variant-numeric:tabular-nums}
 .readout b{font-size:20px}
 .stomp{display:grid;place-items:center;margin:22px 0 8px}
-#rec{width:132px;height:132px;border-radius:50%;border:6px solid #2c5d52;background:radial-gradient(circle at 35% 30%,#ff7a70,var(--rec) 55%,#c63a31);color:#fff;font:800 17px Archivo,sans-serif;cursor:pointer;box-shadow:0 10px 0 #0a251f,0 14px 24px rgba(0,0,0,.4);transition:transform .08s}
-#rec:active{transform:translateY(5px);box-shadow:0 5px 0 #0a251f,0 8px 16px rgba(0,0,0,.4)}
-#rec.on{animation:pulse 1.1s infinite}
-#rec.play,#rec.idle{font-size:40px}
-#rec.play{background:radial-gradient(circle at 35% 30%,#c8f5df,var(--loop) 55%,#5fb892);color:#0b2a22}
+
+.sb{width:132px;height:132px;border-radius:50%;border:6px solid #2c5d52;background:radial-gradient(circle at 35% 30%,#ff7a70,var(--rec) 55%,#c63a31);color:#fff;font:800 17px Archivo,sans-serif;cursor:pointer;box-shadow:0 10px 0 #0a251f,0 14px 24px rgba(0,0,0,.4);transition:transform .08s}
+
+.sb:active{transform:translateY(5px);box-shadow:0 5px 0 #0a251f,0 8px 16px rgba(0,0,0,.4)}
+
+.sb.on{animation:pulse 1.1s infinite}
+
+.sb.play,.sb.idle{font-size:40px}
+
+.sb.play{background:radial-gradient(circle at 35% 30%,#c8f5df,var(--loop) 55%,#5fb892);color:#0b2a22}
 @keyframes pulse{50%{box-shadow:0 10px 0 #0a251f,0 0 0 14px rgba(255,90,78,.25)}}
-@media (prefers-reduced-motion:reduce){#rec.on{animation:none}}
+@media (prefers-reduced-motion:reduce){.sb.on{animation:none}}
 .hint{text-align:center;color:#93aba3;font-size:14px;margin:6px 0 0;min-height:1.5em}
 .row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 button.s{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--on-box);font:600 15px Archivo,sans-serif;cursor:pointer}
@@ -54,11 +59,79 @@ h2{font-size:17px;margin:22px 0 8px}
 .file{display:inline-flex;align-items:center;min-height:44px;color:var(--mute);font-size:15px;cursor:pointer;text-decoration:underline;margin-top:18px}
 .file input{position:absolute;opacity:0;width:1px;height:1px}
 .note{color:var(--mute);font-size:14px;margin-top:20px}
+
+.tabs{display:flex;gap:6px;background:light-dark(#d6e3dc,#132c26);padding:4px;border-radius:999px;margin:0 0 16px}
+.tabs button{flex:1;min-height:44px;border:0;border-radius:999px;background:transparent;color:var(--ink);font:700 15px Archivo,sans-serif;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--box);color:var(--on-box)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid light-dark(#b9cdc3,#2a4a42);background:light-dark(#fff,#132c26);color:var(--ink);font:600 15px Archivo,sans-serif;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--box);color:var(--on-box);border-color:var(--box)}
+.chip:disabled{opacity:.45}
+.ctl{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center}
+.ctl .v{font-variant-numeric:tabular-nums;min-width:4.5em;text-align:right;font-weight:700;white-space:nowrap}
+input[type=range]{width:100%;accent-color:#2f8f72;height:44px}
+.lbl{font-size:15px;color:var(--mute);min-width:3.2em}
+.big{font-size:44px;font-weight:800;color:#eaf2ec}
+details{margin-top:22px;border-top:1px solid light-dark(#c9d8d0,#21403a);padding-top:12px}
+summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center}
+.warn{background:light-dark(#fff3d6,#3a2f14);border-radius:12px;padding:10px 12px;font-size:14px;margin-top:14px}
 </style>
 </head>
 <body>
 <main>
   <h1>Looper</h1>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabBeat" aria-selected="true">Mit Beat</button>
+    <button role="tab" id="tabFree" aria-selected="false">Frei</button>
+  </div>
+
+  <div id="vBeat">
+  <p class="sub">Beat starten, REC drücken, nach einem Takt Vorzähler spielen. Der Loop rastet im Takt ein.</p>
+  <section class="pedal" aria-label="Beat-Looper">
+    <div class="screen">
+      <canvas id="bwave"></canvas>
+      <div class="msg" id="bmsg">Beat starten und los.</div>
+    </div>
+    <div class="readout"><span id="brd1">–</span><span id="brd2"></span></div>
+    <div class="stomp"><button id="brec" class="sb" aria-label="Aufnahme starten">REC</button></div>
+    <p class="hint" id="bhint">&nbsp;</p>
+    <div class="row">
+      <button class="s" id="bBeat">Beat ▶</button>
+      <button class="s" id="bNew" disabled>Neu</button>
+      <button class="s" id="bClear" disabled>Löschen</button>
+    </div>
+  </section>
+
+  <h2>Beat</h2>
+  <div class="chips" id="presets"></div>
+  <div class="ctl" style="margin-top:10px">
+    <button class="chip" id="tDown" aria-label="Langsamer">−</button>
+    <input type="range" id="tempo" min="60" max="180" step="1" value="100" aria-label="Tempo">
+    <button class="chip" id="tUp" aria-label="Schneller">+</button>
+  </div>
+  <p class="sub" style="margin:4px 0 0">Tempo: <b id="tVal">100 BPM</b> <span id="tLock"></span></p>
+
+  <h2>Loop-Länge</h2>
+  <div class="chips" id="lens"></div>
+
+  <h2>Mix</h2>
+  <div class="ctl"><span class="lbl">Beat</span><input type="range" id="vDrum" min="0" max="1" step="0.01" value="0.8" aria-label="Lautstärke Beat"><span></span></div>
+  <div class="ctl"><span class="lbl">Loop</span><input type="range" id="vLoop" min="0" max="1.5" step="0.01" value="1" aria-label="Lautstärke Loop"><span></span></div>
+
+  <details id="latBox">
+    <summary>Latenz: <span id="latVal" style="margin-left:6px">nicht gemessen</span></summary>
+    <p class="sub">Handy-Browser nehmen leicht verzögert auf. Ohne Korrektur klingt dein Loop hinter dem Beat. „Messen“ spielt 8 Klicks über den Lautsprecher und hört mit dem Mikro zu. Mit Kopfhörern: Hörer direkt ans Mikro halten.</p>
+    <div class="ctl">
+      <button class="chip" id="latDown" aria-label="5 ms weniger">−5</button>
+      <button class="chip" id="latMeasure">Messen</button>
+      <button class="chip" id="latUp" aria-label="5 ms mehr">+5</button>
+    </div>
+    <p class="sub" id="latMsg" style="margin-top:8px"></p>
+  </details>
+  <p class="warn">Kopfhörer benutzen! Sonst nimmt das Mikro den Beat mit auf. Mit Kabel-Kopfhörern geht's am besten, bei Bluetooth unbedingt die Latenz messen.</p>
+  </div>
+
+  <div id="vFree" hidden>
   <p class="sub">Spiel eine Phrase ein, gern zwei- oder dreimal hintereinander. Die App sucht den Loop, den du gemeint hast.</p>
 
   <section class="pedal" aria-label="Looper">
@@ -67,7 +140,7 @@ h2{font-size:17px;margin:22px 0 8px}
       <div class="msg" id="msg">Tippe auf Aufnahme und spiel los.</div>
     </div>
     <div class="readout"><span id="rd1">–</span><span id="rd2"></span></div>
-    <div class="stomp"><button id="rec" aria-label="Aufnahme starten">REC</button></div>
+    <div class="stomp"><button id="rec" class="sb" aria-label="Aufnahme starten">REC</button></div>
     <p class="hint" id="hint">&nbsp;</p>
     <div class="row">
       <button class="s" id="click" aria-pressed="false" disabled>Klick</button>
@@ -82,6 +155,7 @@ h2{font-size:17px;margin:22px 0 8px}
 
   <label class="file">Oder Audiodatei laden (WAV, MP3, M4A)<input type="file" id="file" accept="audio/*"></label>
   <p class="note">Tipp: Spiel deine Phrase mindestens zweimal. Dann erkennt die App die Wiederholung. Bei nur einem Durchgang rastet sie die Länge auf ganze Schläge ein.</p>
+  </div>
 </main>
 
 <script>
@@ -287,6 +361,7 @@ $('file').onchange = async e => {
   e.target.value = '';
 };
 new ResizeObserver(() => st.take && !st.playing && draw()).observe($('wave'));
+/*BEATJS*/
 }
 </script>
 </body>

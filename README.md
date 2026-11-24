@@ -6,4 +6,4 @@ Phrase einspielen, die App erkennt den gemeinten Loop.
 - `src/loop.js`: Loop-Erkennung, `src/app.html`: UI-Vorlage
 - `tests/`: synthetische Tests (`node tests/test.js`)
 
-Build: `python3 -c "open(\"index.html\",\"w\").write(open(\"src/app.html\").read().replace(\"/*LOOPJS*/\",open(\"src/loop.js\").read()))"`
+Build: `python3 build.py` (setzt `src/app.html`, `src/loop.js`, `src/beat.js` zu `index.html` zusammen)
