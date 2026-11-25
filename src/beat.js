@@ -16,7 +16,7 @@ const B = {
   running: false, t0: 0, step: 0, next: 0, timer: 0, w: 0,
   state: 'idle', recStart: 0, recEnd: Infinity, nBars: 0,
   loop: null, loopDur: 0, loopAnchor: 0, loopOn: true, src: null, peaks: null,
-  gDrum: null, gLoop: null, noise: null, mic: null, chunks: [], level: 0, lat: store.get('lat', null)
+  gDrum: null, gLoop: null, gClick: null, cur: null, quiet: store.get('quiet', true), noise: null, mic: null, chunks: [], level: 0, lat: store.get('lat', null)
 };
 const stepDur = () => 60 / B.bpm / 4, barDur = () => 16 * stepDur();
 const bmsg = t => { $('bmsg').textContent = t || ''; $('bmsg').hidden = !t; };
@@ -27,6 +27,7 @@ function graph() {
   if (B.gDrum) return c;
   B.gDrum = c.createGain(); B.gDrum.gain.value = +$('vDrum').value; B.gDrum.connect(c.destination);
   B.gLoop = c.createGain(); B.gLoop.gain.value = +$('vLoop').value; B.gLoop.connect(c.destination);
+  B.gClick = c.createGain(); B.gClick.gain.value = +$('vClick').value; B.gClick.connect(c.destination);
   B.noise = c.createBuffer(1, c.sampleRate, c.sampleRate);
   const d = B.noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   return c;
@@ -37,14 +38,14 @@ function env(g, t, v, d) { g.gain.setValueAtTime(v, t); g.gain.exponentialRampTo
 function noiseHit(t, d, type, f, v, q) {
   const c = st.ctx, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
   s.buffer = B.noise; fl.type = type; fl.frequency.value = f; if (q) fl.Q.value = q;
-  env(g, t, v, d); s.connect(fl).connect(g).connect(B.gDrum);
+  env(g, t, v, d); s.connect(fl).connect(g).connect(B.cur || B.gDrum);
   s.start(t, Math.random() * 0.5); s.stop(t + d + 0.02);
 }
 function toneHit(t, f0, f1, d, v, type) {
   const c = st.ctx, o = c.createOscillator(), g = c.createGain();
   o.type = type || 'sine'; o.frequency.setValueAtTime(f0, t);
   if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + d * 0.35);
-  env(g, t, v, d); o.connect(g).connect(B.gDrum); o.start(t); o.stop(t + d + 0.02);
+  env(g, t, v, d); o.connect(g).connect(B.cur || B.gDrum); o.start(t); o.stop(t + d + 0.02);
 }
 function hit(k, t, v) {
   if (k === 'K') { toneHit(t, 160, 42, 0.42, v); toneHit(t, 1200, 200, 0.012, v * 0.25, 'triangle'); }
@@ -60,8 +61,17 @@ function hit(k, t, v) {
 function tick() {
   const c = st.ctx, rows = PRESETS[B.preset].rows;
   while (B.next < c.currentTime + 0.15) {
-    const s = B.step % 16;
-    for (const k in rows) { const ch = rows[k][s]; if (ch === 'x') hit(k, B.next, 1); else if (ch === 'o') hit(k, B.next, 0.55); }
+    const s = B.step % 16, tn = B.next;
+    // Ohne Kopfhörer: von Vorzähler bis Aufnahmeende nur ein leiser Klick, damit der Beat nicht mit aufs Mikro kommt
+    const quiet = B.quiet && ['count', 'rec', 'finishing'].includes(B.state) && tn >= B.recStart - barDur() - 1e-4 && tn < B.recEnd - 1e-4;
+    if (quiet) {
+      B.cur = B.gClick;
+      const ch = PRESETS.click.rows.Q[s]; if (ch !== '.') hit('Q', tn, ch === 'x' ? 1 : 0.55);
+    } else {
+      B.cur = B.gDrum;
+      for (const k in rows) { const ch = rows[k][s]; if (ch === 'x') hit(k, tn, 1); else if (ch === 'o') hit(k, tn, 0.55); }
+    }
+    B.cur = null;
     B.step++; B.next = B.t0 + B.step * stepDur();
   }
   B.timer = setTimeout(tick, 25);
@@ -165,7 +175,7 @@ function watch() {
 function finish() {
   const c = st.ctx, sr = c.sampleRate, dur = B.recEnd - B.recStart;
   const len = Math.ceil(dur * sr) + 1, f0 = Math.round((B.recStart + lat()) * sr);
-  const raw = grab(f0, len + Math.round(0.02 * sr));
+  const raw = grab(f0, B.quiet ? len : len + Math.round(0.02 * sr));
   const [data] = LoopDetect.renderLoop([raw], 0, len, sr);
   const buf = c.createBuffer(1, len, sr); buf.copyToChannel(data, 0);
   B.loop = buf; B.loopDur = dur; B.loopAnchor = B.recStart; B.loopOn = true;
@@ -243,10 +253,11 @@ function bui() {
   $('tLock').textContent = B.loop ? '· gesperrt, solange ein Loop existiert' : '';
   document.querySelectorAll('#presets .chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === B.preset));
   document.querySelectorAll('#lens .chip').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k) === String(B.bars)));
+  $('quiet').setAttribute('aria-pressed', B.quiet);
   $('latVal').textContent = B.lat === null ? 'nicht gemessen (geschätzt)' : Math.round(B.lat * 1000) + ' ms';
   const h = {
     idle: B.running ? 'REC drücken: Nach dem Vorzähler-Takt geht die Aufnahme los.' : 'Beat ▶ startet den Beat, REC startet ihn automatisch mit.',
-    count: 'Vorzähler … bei Takt 1 losspielen.',
+    count: B.quiet ? 'Vorzähler … nur Klick, bei Takt 1 losspielen.' : 'Vorzähler … bei Takt 1 losspielen.',
     rec: B.bars === 'auto' ? 'Aufnahme läuft. STOP rundet auf den nächsten ganzen Takt.' : `Aufnahme läuft (${B.nBars} Takte). STOP beendet früher, auf ganze Takte gerundet.`,
     finishing: 'Loop wird gebaut …',
     loop: 'Taster schaltet den Loop stumm/an. „Neu“ nimmt einen neuen auf.'
@@ -311,6 +322,9 @@ $('tDown').onclick = () => setTempo(B.bpm - 1);
 $('tUp').onclick = () => setTempo(B.bpm + 1);
 $('vDrum').oninput = e => { if (B.gDrum) B.gDrum.gain.value = +e.target.value; };
 $('vLoop').oninput = e => { if (B.gLoop) B.gLoop.gain.value = +e.target.value; };
+$('vClick').value = store.get('clickVol', 0.35);
+$('vClick').oninput = e => { if (B.gClick) B.gClick.gain.value = +e.target.value; store.set('clickVol', +e.target.value); };
+$('quiet').onclick = () => { B.quiet = !B.quiet; store.set('quiet', B.quiet); bui(); };
 $('brec').onclick = bRecPress;
 $('bBeat').onclick = () => B.running ? beatStop() : beatStart();
 $('bClear').onclick = clearLoop;
